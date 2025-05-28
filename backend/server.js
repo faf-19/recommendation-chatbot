@@ -28,7 +28,7 @@ mongoose.connect(mongoURI, {
 
 mongoose.connection.on('error', (err) => {
     console.error('MongoDB connection error:', err);
-    isMongoConnected = false;
+    isMongoConnected = true;
 });
 
 mongoose.connection.on('connected', () => {
