@@ -1,0 +1,46 @@
+{
+    "general": [
+        {
+            "question": "What is BookCompass?",
+            "answer": "BookCompass is an AI-powered book recommendation platform that helps you discover your next great read based on your interests, reading history, and community recommendations."
+        },
+        {
+            "question": "Is BookCompass free to use?",
+            "answer": "Yes, BookCompass is free to use. You can access book recommendations, create reading lists, and participate in community discussions without any charge."
+        },
+        {
+            "question": "How does the recommendation system work?",
+            "answer": "Our AI system analyzes your reading preferences, favorite genres, authors you enjoy, and combines this with community ratings to suggest books you're likely to enjoy."
+        }
+    ],
+    "recommendations": [
+        {
+            "question": "How can I get better book recommendations?",
+            "answer": "To get better recommendations: 1) Rate more books, 2) Add books to your reading list, 3) Specify your favorite genres and authors, 4) Provide feedback on recommendations."
+        },
+        {
+            "question": "Can I get recommendations for specific genres?",
+            "answer": "Yes! You can filter recommendations by genre, mood, length, or complexity level. Just specify your preferences in the recommendation settings."
+        }
+    ],
+    "community": [
+        {
+            "question": "How can I contribute to the community?",
+            "answer": "You can contribute by writing book reviews, participating in discussions, creating reading lists, and helping other members find their next great read."
+        },
+        {
+            "question": "Are there reading groups I can join?",
+            "answer": "Yes, you can join or create reading groups based on genres, authors, or specific books. Groups can organize reading schedules and discussions."
+        }
+    ],
+    "technical": [
+        {
+            "question": "How do I reset my password?",
+            "answer": "Click on 'Forgot Password' on the login page, enter your email address, and follow the instructions sent to your email to reset your password."
+        },
+        {
+            "question": "Can I sync my reading list across devices?",
+            "answer": "Yes, your reading list and preferences automatically sync across all devices when you're logged into your account."
+        }
+    ]
+} 

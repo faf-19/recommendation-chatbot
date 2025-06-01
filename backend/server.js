@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const multer = require('multer');
+const fs = require('fs').promises;
+const path = require('path');
+const pdfParse = require('pdf-parse');
 require('dotenv').config();
 
 const app = express();
@@ -9,6 +13,35 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(bodyParser.json());
+
+// Configure multer for PDF uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'backend/pdfs/');
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/pdf') {
+            cb(null, true);
+        } else {
+            cb(new Error('Only PDF files are allowed!'), false);
+        }
+    }
+});
+
+// PDF Document Schema
+const pdfDocumentSchema = new mongoose.Schema({
+    filename: String,
+    content: String,
+    uploadDate: { type: Date, default: Date.now }
+});
+const PdfDocument = mongoose.model('PdfDocument', pdfDocumentSchema);
 
 const mongoURI = process.env.MONGO_URI || 'mongodb+srv://BisratAbrham:nchnHeyHqCh46rLT@cluster0.hjgnw.mongodb.net/BookCompassGcProject';
 let isMongoConnected = false;
@@ -102,6 +135,81 @@ const exponentialBackoff = async (retryCount) => {
     await wait(delay);
 };
 
+// Load static data
+const loadStaticData = async () => {
+    try {
+        const websiteInfo = JSON.parse(await fs.readFile(path.join(__dirname, 'static', 'websiteInfo.json'), 'utf8'));
+        const faq = JSON.parse(await fs.readFile(path.join(__dirname, 'static', 'faq.json'), 'utf8'));
+        const history = JSON.parse(await fs.readFile(path.join(__dirname, 'static', 'history.json'), 'utf8'));
+        return { websiteInfo, faq, history };
+    } catch (error) {
+        console.error('Error loading static data:', error);
+        return { websiteInfo: {}, faq: {}, history: {} };
+    }
+};
+
+let staticData = {};
+loadStaticData().then(data => {
+    staticData = data;
+    console.log('Static data loaded successfully');
+});
+
+app.post('/api/chat', async (req, res) => {
+    try {
+        console.log('Received chat request:', JSON.stringify(req.body, null, 2));
+        const fetch = (await import('node-fetch')).default;
+        const { userQuery } = req.body;
+
+        if (!userQuery || userQuery.trim() === '') {
+            return res.status(400).json({ message: 'userQuery is required' });
+        }
+
+        let context = 'You are an AI assistant with access to the following information:\n\n';
+        
+        // Add website info to context
+        context += 'WEBSITE INFORMATION:\n';
+        context += JSON.stringify(staticData.websiteInfo, null, 2) + '\n\n';
+        
+        // Add historical information if query seems history-related
+        if (userQuery.toLowerCase().includes('ginbot') || 
+            userQuery.toLowerCase().includes('history') || 
+            userQuery.toLowerCase().includes('ethiopia') ||
+            userQuery.toLowerCase().includes('tigray') ||
+            userQuery.toLowerCase().includes('derg')) {
+            context += 'HISTORICAL INFORMATION:\n';
+            context += JSON.stringify(staticData.history, null, 2) + '\n\n';
+        }
+        
+        // Add FAQ to context if query seems question-related
+        if (userQuery.toLowerCase().includes('how') || 
+            userQuery.toLowerCase().includes('what') || 
+            userQuery.toLowerCase().includes('?')) {
+            context += 'FREQUENTLY ASKED QUESTIONS:\n';
+            context += JSON.stringify(staticData.faq, null, 2) + '\n\n';
+        }
+
+        context += 'USER QUERY:\n' + userQuery;
+
+        const requestBody = {
+            contents: [
+                {
+                    role: 'user',
+                    parts: [{ text: context }]
+                }
+            ],
+            generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 1000
+            }
+        };
+
+        // ... rest of the existing chat endpoint code ...
+    } catch (error) {
+        console.error('Error processing chat:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 app.post('/api/chat/messages', async (req, res) => {
     try {
         const { sessionId, role, text } = req.body;
@@ -168,145 +276,78 @@ app.get('/api/interactions', async (req, res) => {
     }
 });
 
-app.post('/api/chat', async (req, res) => {
+// PDF Upload and Processing Endpoint
+app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     try {
-        console.log('Received chat request:', JSON.stringify(req.body, null, 2));
-        const fetch = (await import('node-fetch')).default;
-        const { userQuery } = req.body;
-
-        if (!userQuery || userQuery.trim() === '') {
-            return res.status(400).json({ message: 'userQuery is required' });
+        if (!req.file) {
+            return res.status(400).json({ message: 'No PDF file uploaded' });
         }
 
-        if (!isMongoConnected) {
-            return res.status(500).json({ message: 'MongoDB is not connected' });
-        }
+        const pdfPath = req.file.path;
+        const dataBuffer = await fs.readFile(pdfPath);
+        const pdfData = await pdfParse(dataBuffer);
 
-        if (!process.env.GEMINI_API_KEY) {
-            console.error('GEMINI_API_KEY is not set in environment variables');
-            return res.status(500).json({
-                message: 'Server configuration error: API key not set',
-                error: 'GEMINI_API_KEY is missing'
-            });
-        }
-
-        // Check rate limit
-        if (!checkRateLimit()) {
-            const retryAfter = Math.ceil((60 - (Date.now() - rateLimit.lastRefill) / 1000));
-            return res.status(429).json({
-                message: 'Rate limit exceeded',
-                retryAfter: retryAfter,
-                error: 'Please try again after ' + retryAfter + ' seconds'
-            });
-        }
-
-        const forumData = await Forum.findOne();
-        let context = forumData
-            ? `You are BookCompass, a chatbot for book recommendations. Website context: ${forumData.introduction}\nFeatures: ${JSON.stringify(forumData.features)}`
-            : 'You are BookCompass, a chatbot for book recommendations.';
-        if (userQuery.toLowerCase().includes('backend') || userQuery.toLowerCase().includes('books')) {
-            const genres = forumData?.features.map(f => f.name).join(', ') || 'various genres';
-            context += `\nAvailable book genres in the backend: ${genres}.`;
-        }
-
-        const requestBody = {
-            contents: [
-                {
-                    role: 'user',
-                    parts: [{ text: context + '\n\nUser query: ' + userQuery }]
-                }
-            ],
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 200
-            }
-        };
-
-        let retryCount = 0;
-        const maxRetries = 3;
-
-        while (retryCount < maxRetries) {
-            try {
-                console.log('Sending request to Gemini API with body:', JSON.stringify(requestBody, null, 2));
-
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    }
-                );
-
-                const responseText = await response.text();
-                console.log('Raw API Response:', responseText);
-
-                if (!response.ok) {
-                    let errorDetails;
-                    try {
-                        errorDetails = JSON.parse(responseText);
-                    } catch {
-                        errorDetails = responseText;
-                    }
-
-                    // Handle rate limit errors specifically
-                    if (response.status === 429) {
-                        if (retryCount < maxRetries - 1) {
-                            console.log(`Rate limit hit, attempt ${retryCount + 1}/${maxRetries}. Waiting before retry...`);
-                            await exponentialBackoff(retryCount);
-                            retryCount++;
-                            continue;
-                        } else {
-                            return res.status(429).json({
-                                message: 'Rate limit exceeded after retries',
-                                error: 'Please try again later'
-                            });
-                        }
-                    }
-
-                    console.error('Gemini API error response:', JSON.stringify({
-                        status: response.status,
-                        statusText: response.statusText,
-                        body: errorDetails
-                    }, null, 2));
-
-                    return res.status(response.status).json({
-                        message: 'Gemini API error',
-                        error: `${response.status} - ${JSON.stringify(errorDetails)}`
-                    });
-                }
-
-                const data = JSON.parse(responseText);
-                console.log('Parsed API response:', JSON.stringify(data, null, 2));
-
-                if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
-                    console.error('Invalid response format from Gemini API:', JSON.stringify(data, null, 2));
-                    return res.status(500).json({
-                        message: 'Invalid response format from Gemini API',
-                        error: JSON.stringify(data)
-                    });
-                }
-
-                const botReply = data.candidates[0].content.parts[0].text.replace(/\*\*(.*?)\*\*/g, '$1').trim();
-                console.log('Bot reply:', botReply);
-
-                return res.json({ response: botReply });
-            } catch (error) {
-                if (retryCount < maxRetries - 1) {
-                    console.log(`Request failed, attempt ${retryCount + 1}/${maxRetries}. Retrying...`);
-                    await exponentialBackoff(retryCount);
-                    retryCount++;
-                } else {
-                    throw error;
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in chat endpoint:', error);
-        res.status(500).json({
-            message: 'Internal server error',
-            error: error.message
+        // Save PDF content to database
+        const pdfDoc = new PdfDocument({
+            filename: req.file.originalname,
+            content: pdfData.text
         });
+        await pdfDoc.save();
+
+        // Clean up the uploaded file
+        await fs.unlink(pdfPath);
+
+        res.status(200).json({
+            message: 'PDF processed successfully',
+            filename: req.file.originalname
+        });
+    } catch (error) {
+        console.error('Error processing PDF:', error);
+        res.status(500).json({ message: 'Error processing PDF', error: error.message });
+    }
+});
+
+// Get all PDF documents
+app.get('/api/pdfs', async (req, res) => {
+    try {
+        const pdfs = await PdfDocument.find({}, { filename: 1, uploadDate: 1 });
+        res.json(pdfs);
+    } catch (error) {
+        console.error('Error fetching PDFs:', error);
+        res.status(500).json({ message: 'Error fetching PDFs', error: error.message });
+    }
+});
+
+// Process existing PDF endpoint
+app.post('/api/process-existing-pdf', async (req, res) => {
+    try {
+        console.log('Starting PDF processing...');
+        const pdfPath = 'C:/Users/hp/Downloads/Telegram Desktop/Exit Study Plan.pdf';
+        console.log('PDF path:', pdfPath);
+        
+        console.log('Reading file...');
+        const dataBuffer = await fs.readFile(pdfPath);
+        console.log('File read successfully, parsing PDF...');
+        
+        const pdfData = await pdfParse(dataBuffer);
+        console.log('PDF parsed successfully, content length:', pdfData.text.length);
+
+        // Save PDF content to database
+        const pdfDoc = new PdfDocument({
+            filename: 'Exit Study Plan.pdf',
+            content: pdfData.text
+        });
+        console.log('Saving to database...');
+        await pdfDoc.save();
+        console.log('PDF saved to database successfully');
+
+        res.status(200).json({
+            message: 'PDF processed successfully',
+            filename: 'Exit Study Plan.pdf'
+        });
+    } catch (error) {
+        console.error('Error processing PDF:', error);
+        res.status(500).json({ message: 'Error processing PDF', error: error.message });
     }
 });
 

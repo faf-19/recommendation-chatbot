@@ -1,0 +1,53 @@
+{
+    "name": "BookCompass",
+    "description": "Your AI-powered guide to discovering great books",
+    "mission": "To help readers find their next favorite book through personalized recommendations and community engagement",
+    "features": {
+        "aiRecommendations": {
+            "title": "AI-Powered Book Recommendations",
+            "description": "Get personalized book suggestions based on your interests and reading history",
+            "details": [
+                "Genre-based recommendations",
+                "Mood-based suggestions",
+                "Similar book recommendations",
+                "Author recommendations"
+            ]
+        },
+        "communityFeatures": {
+            "title": "Community Engagement",
+            "description": "Connect with fellow readers and share your literary journey",
+            "details": [
+                "Book reviews and ratings",
+                "Reading groups",
+                "Discussion forums",
+                "Book lists and collections"
+            ]
+        },
+        "personalLibrary": {
+            "title": "Personal Library Management",
+            "description": "Keep track of your reading journey",
+            "details": [
+                "Reading history",
+                "Want to read list",
+                "Currently reading",
+                "Favorite books and authors"
+            ]
+        }
+    },
+    "guidelines": {
+        "communityRules": [
+            "Be respectful to other members",
+            "No spam or self-promotion",
+            "Keep discussions on-topic",
+            "No hate speech or harassment",
+            "Respect copyright and intellectual property"
+        ],
+        "reviewGuidelines": [
+            "Focus on the book's content",
+            "No spoilers without warnings",
+            "Be constructive in criticism",
+            "Rate books fairly",
+            "Include both pros and cons"
+        ]
+    }
+} 
